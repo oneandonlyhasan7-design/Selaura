@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Selaura Client</string>
+    <string name="launch_minecraft">Launch Minecraft</string>
+    <string name="minecraft_not_found">Minecraft not found. Please install Minecraft Pocket Edition.</string>
+    <string name="loading">Loading Selaura Client...</string>
+    <string name="version_info">Version: 0.10</string>
+    <string name="supports_both">Supports both paid and cracked MCPE versions</string>
+</resources>
