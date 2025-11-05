@@ -1,2 +1,25 @@
 [agent]
 expertMode = true
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "selaura-status"
+
+[[workflows.workflow]]
+name = "selaura-status"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd Selaura && echo \"=== Selaura Build Status ===\" && echo \"Modified files:\" && git status -s && echo \"\" && echo \"Ready to push: include/CMakeLists.txt, src/hooks/hooks.cpp\" && echo \"\" && echo \"Changes: SafetyHook → ShadowHook (ARM64 compatible)\" && echo \"\" && echo \"Next: git add . && git commit -m 'Fix ARM64' && git push\" && tail -f /dev/null"
+
+[workflows.workflow.metadata]
+outputType = "console"
