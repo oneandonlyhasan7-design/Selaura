@@ -1,0 +1,190 @@
+name: Build Selaura APK and Native Libraries
+
+on:
+  push:
+    branches: [ main, master, dev ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+    
+    - name: Install CMake 3.28.3
+      run: |
+        pip install cmake==3.28.3
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        cmake --version
+    
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+      with:
+        api-level: 34
+        build-tools-version: 34.0.0
+        ndk-version: 26.1.10909125
+    
+    - name: Upgrade Android Gradle Plugin
+      run: |
+        cd android
+        sed -i "s/classpath 'com.android.tools.build:gradle:8.1.0'/classpath 'com.android.tools.build:gradle:8.4.0'/g" build.gradle
+        cat build.gradle
+    
+    - name: Update CMake version
+      run: |
+        cd android/app
+        sed -i "s/version '3.22.1'/version '3.28.3'/g" build.gradle
+    
+    - name: Setup Gradle 8.4 wrapper
+      run: |
+        cd android
+        cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
+        distributionBase=GRADLE_USER_HOME
+        distributionPath=wrapper/dists
+        distributionUrl=https\://services.gradle.org/distributions/gradle-8.4-all.zip
+        networkTimeout=10000
+        validateDistributionUrl=true
+        zipStoreBase=GRADLE_USER_HOME
+        zipStorePath=wrapper/dists
+        EOF
+        curl -L -o gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.4.0/gradle/wrapper/gradle-wrapper.jar
+        chmod +x gradlew
+    
+    - name: Verify Gradle version
+      run: |
+        cd android
+        ./gradlew --version
+    
+    - name: Cache Gradle
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-8.4-agp-8.4-${{ hashFiles('**/*.gradle*') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-8.4-agp-8.4-
+    
+    - name: Cache NDK
+      uses: actions/cache@v4
+      with:
+        path: |
+          android/app/.cxx
+          android/app/build/intermediates/cmake
+        key: ${{ runner.os }}-ndk-${{ hashFiles('**/CMakeLists.txt', '**/*.cpp', '**/*.h') }}
+        restore-keys: |
+          ${{ runner.os }}-ndk-
+    
+    - name: Build native libraries
+      run: |
+        cd android
+        ./gradlew :app:externalNativeBuildRelease --stacktrace --no-daemon
+    
+    - name: Build APK
+      run: |
+        cd android
+        ./gradlew assembleRelease --stacktrace --no-daemon
+    
+    - name: Collect artifacts
+      run: |
+        mkdir -p artifacts/apk artifacts/native-libs/arm64-v8a
+        find android/app/build/outputs/apk -name "*.apk" -exec cp {} artifacts/apk/ \;
+        find android/app/build/intermediates -name "*.so" -path "*/arm64-v8a/*" -exec cp {} artifacts/native-libs/arm64-v8a/ \;
+        ls -lhR artifacts/
+    
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: selaura-apk
+        path: artifacts/apk/*.apk
+        retention-days: 30
+    
+    - name: Upload Native Libraries
+      uses: actions/upload-artifact@v4
+      with:
+        name: native-libs-arm64-v8a
+        path: artifacts/native-libs/arm64-v8a/*.so
+        retention-days: 30
+    
+    - name: Build info
+      run: |
+        echo "Build Information" > artifacts/BUILD_INFO.txt
+        echo "=================" >> artifacts/BUILD_INFO.txt
+        echo "Date: $(date)" >> artifacts/BUILD_INFO.txt
+        echo "Commit: ${{ github.sha }}" >> artifacts/BUILD_INFO.txt
+        echo "Branch: ${{ github.ref_name }}" >> artifacts/BUILD_INFO.txt
+        echo "" >> artifacts/BUILD_INFO.txt
+        echo "Compatibility: Cracked MCPE (ARM64)" >> artifacts/BUILD_INFO.txt
+        echo "Supported packages:" >> artifacts/BUILD_INFO.txt
+        echo "- com.mojang.minecraftpe" >> artifacts/BUILD_INFO.txt
+        echo "- com.mojang.minecraftpe.beta" >> artifacts/BUILD_INFO.txt
+        echo "- com.mojang.minecraftpe.preview" >> artifacts/BUILD_INFO.txt
+        echo "- com.mojang.minecraftpe.demo" >> artifacts/BUILD_INFO.txt
+        echo "- com.mojang.minecraftpe.trial" >> artifacts/BUILD_INFO.txt
+    
+    - name: Upload build info
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-info
+        path: artifacts/BUILD_INFO.txt
+        retention-days: 30
+
+  release:
+    needs: build
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Download APK
+      uses: actions/download-artifact@v4
+      with:
+        name: selaura-apk
+        path: release/
+    
+    - name: Download libs
+      uses: actions/download-artifact@v4
+      with:
+        name: native-libs-arm64-v8a
+        path: release/libs/
+    
+    - name: Create release
+      id: tag
+      run: |
+        TAG="build-$(date +%Y%m%d-%H%M%S)"
+        echo "tag_name=$TAG" >> $GITHUB_OUTPUT
+    
+    - name: GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.tag.outputs.tag_name }}
+        name: Selaura Build ${{ steps.tag.outputs.tag_name }}
+        body: |
+          Selaura Client - Cracked MCPE Compatible
+          
+          Build: ${{ github.sha }}
+          
+          - APK for Android 9+ ARM64
+          - Native .so libraries
+          
+          Works with official and cracked MCPE
+        files: |
+          release/*.apk
+          release/libs/*.so
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
