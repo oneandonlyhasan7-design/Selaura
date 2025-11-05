@@ -50,9 +50,12 @@ CPMAddPackage(
 )
 
 CPMAddPackage(
-        NAME safetyhook
-        GITHUB_REPOSITORY cursey/safetyhook
+        NAME shadowhook
+        GITHUB_REPOSITORY bytedance/android-inline-hook
         GIT_TAG main
+        OPTIONS
+            "SHADOWHOOK_BUILD_SHARED OFF"
+            "SHADOWHOOK_BUILD_STATIC ON"
 )
 
 CPMAddPackage(
@@ -81,7 +84,7 @@ target_link_libraries(selaura INTERFACE
         spdlog::spdlog
         GSL::gsl
         glm
-        safetyhook::safetyhook
+        shadowhook
         glaze::glaze
         magic_enum::magic_enum
 )
